@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>户型图设计器</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="#/">
+    <span class="brand-mark">⌂</span>
+    <span>户型图设计器</span>
+  </a>
+  <div class="topbar-right">
+    <span id="modeBadge" class="badge">加载中</span>
+    <span id="userChip" class="user-chip" hidden></span>
+    <button id="loginBtn" class="btn ghost small" hidden>登录</button>
+    <button id="logoutBtn" class="btn ghost small" hidden>退出</button>
+    <button id="newBtn" class="btn ghost">新建方案</button>
+  </div>
+</header>
+
+<main class="layout" id="appShell">
+  <aside class="sidebar">
+    <div class="sidebar-head">
+      <span>我的方案</span>
+      <button id="refreshBtn" class="icon-btn" title="刷新">⟳</button>
+    </div>
+    <div id="projectList" class="project-list"></div>
+    <div class="sidebar-foot" id="vendorInfo"></div>
+  </aside>
+
+  <section class="content" id="content">
+    <!-- 上传视图 -->
+    <div id="viewUpload" class="view">
+      <div class="hero">
+        <h1>把户型图变成可以走进去的设计器</h1>
+        <p>上传带尺寸标注的户型图、CAD 图纸（PDF / DXF），自动还原墙体、门窗、房间，生成可 2D 布置、3D 漫游的装修设计器。</p>
+      </div>
+
+      <form id="uploadForm" class="card upload-card">
+        <label id="dropzone" class="dropzone" for="fileInput">
+          <input id="fileInput" type="file" accept=".jpg,.jpeg,.png,.webp,.pdf,.dxf" hidden>
+          <div class="dz-icon">⇪</div>
+          <div class="dz-title">点击选择，或把图纸拖到这里</div>
+          <div class="dz-hint">支持 JPG / PNG / WEBP / PDF / DXF，最大 30MB</div>
+          <div id="filePicked" class="dz-picked" hidden></div>
+        </label>
+
+        <div class="fields">
+          <label class="field">
+            <span>方案名称</span>
+            <input id="nameInput" type="text" placeholder="例如：万科城 3-1201" maxlength="60">
+          </label>
+          <label class="field">
+            <span>户型总宽（mm）</span>
+            <input id="widthInput" type="number" min="1000" step="10" placeholder="例如 12340">
+          </label>
+          <label class="field">
+            <span>户型总深（mm）</span>
+            <input id="depthInput" type="number" min="1000" step="10" placeholder="例如 11940">
+          </label>
+        </div>
+
+        <label class="switch">
+          <input id="furnitureInput" type="checkbox">
+          <span>自动摆一套基础家具（先看起来像个家）</span>
+        </label>
+
+        <div class="submit-row">
+          <button id="submitBtn" class="btn primary" type="submit">开始生成</button>
+          <span class="submit-hint">总宽/总深填图上最外圈的尺寸；不填会先试识别，识别不出再让你补。</span>
+        </div>
+        <div class="progress-wrap" id="uploadProgress" hidden>
+          <div class="bar"><i></i></div>
+          <span id="uploadProgressText">上传中…</span>
+        </div>
+      </form>
+
+      <div class="grid-3">
+        <div class="card mini">
+          <h3>哪些图效果好</h3>
+          <p>带分段尺寸标注的彩色户型图、售楼处 PDF、CAD 导出的 DXF / 矢量 PDF。</p>
+        </div>
+        <div class="card mini">
+          <h3>哪些图会被拦下</h3>
+          <p>拍照歪斜、扫描件、纯线稿、没有尺寸的小图——先拦下比生成一个错方案强。</p>
+        </div>
+        <div class="card mini">
+          <h3>生成后能做什么</h3>
+          <p>2D 布置、3D 漫游、水电点位、报价算量、导出 HTML / 施工图，全部在设计器里完成。</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- 详情视图 -->
+    <div id="viewDetail" class="view" hidden>
+      <div class="detail-head">
+        <div>
+          <h2 id="detailName">—</h2>
+          <div class="detail-meta" id="detailMeta"></div>
+        </div>
+        <div class="detail-actions" id="detailActions"></div>
+      </div>
+
+      <div class="card status-card" id="statusCard">
+        <div class="status-line">
+          <span id="statusPill" class="pill">排队中</span>
+          <span id="stageText" class="stage-text">—</span>
+          <span id="progressText" class="progress-num">0%</span>
+        </div>
+        <div class="bar big"><i id="progressBar"></i></div>
+        <p id="statusMessage" class="status-message"></p>
+      </div>
+
+      <div id="issuesCard" class="card" hidden>
+        <h3>生成说明</h3>
+        <ul id="issuesList" class="issues"></ul>
+      </div>
+
+      <div class="card preview-card" id="previewCard" hidden>
+        <div class="preview-head">
+          <h3>设计器预览</h3>
+          <div class="preview-actions">
+            <button class="btn ghost small" id="togglePreview">加载预览</button>
+            <a class="btn ghost small" id="openDesigner" target="_blank" rel="noopener">新窗口打开</a>
+          </div>
+        </div>
+        <div class="preview-frame-wrap">
+          <iframe id="previewFrame" title="设计器预览" loading="lazy"></iframe>
+        </div>
+      </div>
+
+      <details class="card log-card">
+        <summary>生成日志</summary>
+        <ul id="eventList" class="events"></ul>
+      </details>
+    </div>
+  </section>
+</main>
+
+<div id="authModal" class="modal" hidden>
+  <div class="modal-mask" id="authMask"></div>
+  <div class="card auth-card" role="dialog" aria-modal="true" aria-labelledby="authTitle">
+    <button class="modal-close" id="authClose" type="button" aria-label="关闭">×</button>
+    <div class="auth-brand"><span class="brand-mark">⌂</span> 户型图设计器</div>
+    <h1 id="authTitle">登录后开始生成</h1>
+    <p class="auth-sub">未注册的手机号会自动创建账号</p>
+    <label class="field">
+      <span>手机号</span>
+      <input id="phoneInput" type="tel" inputmode="numeric" maxlength="11" placeholder="11 位手机号" autocomplete="tel">
+    </label>
+    <label class="field">
+      <span>验证码</span>
+      <div class="code-row">
+        <input id="codeInput" type="tel" inputmode="numeric" maxlength="6" placeholder="6 位验证码" autocomplete="one-time-code">
+        <button id="sendCodeBtn" class="btn ghost" type="button">获取验证码</button>
+      </div>
+    </label>
+    <button id="loginSubmitBtn" class="btn primary auth-submit" type="button">登录 / 注册</button>
+    <p id="authHint" class="auth-hint"></p>
+  </div>
+</div>
+
+<div id="leadModal" class="modal" hidden>
+  <div class="modal-mask" id="leadMask"></div>
+  <div class="card auth-card" role="dialog" aria-modal="true" aria-labelledby="leadTitle">
+    <button class="modal-close" id="leadClose" type="button" aria-label="关闭">×</button>
+    <div class="auth-brand"><span class="brand-mark">⌂</span> 户型图设计器</div>
+    <h1 id="leadTitle">留个手机号，下载方案</h1>
+    <p class="auth-sub">用于发送方案文件与后续服务，不会用于其他用途。</p>
+    <label class="field">
+      <span>手机号</span>
+      <input id="leadPhone" type="tel" inputmode="numeric" maxlength="11" placeholder="11 位手机号" autocomplete="tel">
+    </label>
+    <label class="consent">
+      <input id="leadConsent" type="checkbox">
+      <span>我同意收集手机号用于提供本次方案服务</span>
+    </label>
+    <button id="leadSubmit" class="btn primary auth-submit" type="button">提交并下载</button>
+    <p id="leadHint" class="auth-hint"></p>
+  </div>
+</div>
+
+<div id="toast" class="toast" hidden></div>
+<script src="/static/app.js"></script>
+</body>
+</html>

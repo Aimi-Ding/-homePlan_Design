@@ -1,0 +1,20 @@
+# 本地配置与运行时产物，不入库
+.env
+.env.*
+!.env.example
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+
+# 运行时数据（含用户手机号、上传的图纸、生成的方案）
+var/
+*.log
+
+# Node
+node_modules/
+vendor/house-plan-designer/scripts/node_modules/
+
+# 系统
+.DS_Store
