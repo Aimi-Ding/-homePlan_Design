@@ -168,5 +168,11 @@ def build(draft: dict, options: dict, detected: list[dict] | None = None) -> dic
         spec["underlay"] = draft["underlay"]
     if options.get("furniture"):
         spec["furniture"] = _furnish(detected)
-    spec["comments"] = ["当前为几何初稿：墙体、门窗洞口由识别脚本给出，房间名为自动编号，家具为规则摆放。"]
+    xs = [p[0] for w in walls for p in (w["a"], w["b"])] or [0, 4000]
+    ys = [p[1] for w in walls for p in (w["a"], w["b"])] or [0, 4000]
+    center = [round((min(xs) + max(xs)) / 2), round((min(ys) + max(ys)) / 2)]
+    spec["comments"] = [{
+        "at": center,
+        "text": "当前为几何初稿：墙体、门窗洞口由识别脚本给出，房间名为自动编号，家具为规则摆放。",
+    }]
     return spec

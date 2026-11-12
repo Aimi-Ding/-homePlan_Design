@@ -9,13 +9,13 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile
+from fastapi import Body, Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlalchemy import select
 
-from . import analytics, auth, config, jobs, runner
+from . import analytics, auth, config, jobs, metrics, runner
 from .db import SessionLocal, init_db
 from .models import JobEvent, Project, User
 
@@ -60,6 +60,18 @@ def _json(text: str, default):
         return default
 
 
+def _eta(p: Project) -> dict:
+    """粗略的完成时间预期：规则模式约 3 分钟，模型模式约 5 分钟；自查阶段固定按 90 秒算。"""
+    total = 300 if (p.mode or "rule") == "llm" else 180
+    if p.status in TERMINAL:
+        remaining = 0
+    elif p.stage in ("build", "check"):
+        remaining = 90
+    else:
+        remaining = max(20, round(total * (1 - min(p.progress or 0, 99) / 100)))
+    return {"total": total, "remaining": remaining}
+
+
 def _project_out(p: Project) -> dict:
     spec = _json(p.spec_json, {})
     probe = _json(p.probe_json, {})
@@ -87,6 +99,7 @@ def _project_out(p: Project) -> dict:
             "overlay": f"/api/projects/{p.id}/overlay" if p.overlay_path else "",
         },
         "createdAt": p.created_at.isoformat() if isinstance(p.created_at, datetime) else str(p.created_at),
+        "eta": _eta(p),
     }
 
 
@@ -206,6 +219,14 @@ def api_config() -> dict:
     }
 
 
+@app.get("/api/metrics/summary")
+def metrics_summary(request: Request, days: int = 7) -> dict:
+    """给「工具中台看板」拉取的标准指标接口。"""
+    if config.METRICS_TOKEN and request.headers.get("x-metrics-token") != config.METRICS_TOKEN:
+        raise HTTPException(401, "metrics token 无效")
+    return metrics.summary(days)
+
+
 @app.post("/api/projects")
 async def create_project(
     file: UploadFile = File(...),
@@ -295,7 +316,7 @@ def get_events(pid: str, request: Request, after: int = 0) -> dict:
         events = [{"id": e.id, "level": e.level, "stage": e.stage, "message": e.message,
                    "at": e.created_at.isoformat()} for e in rows]
     return {"events": events, "status": p.status, "progress": p.progress, "stage": p.stage,
-            "terminal": p.status in TERMINAL}
+            "terminal": p.status in TERMINAL, "eta": _eta(p)}
 
 
 @app.get("/api/projects/{pid}/stream")
@@ -314,7 +335,7 @@ async def stream(pid: str, request: Request, after: int = 0):
                 events = [{"id": e.id, "level": e.level, "stage": e.stage, "message": e.message}
                           for e in rows]
                 payload = {"events": events, "status": p.status, "progress": p.progress,
-                           "stage": p.stage, "terminal": p.status in TERMINAL}
+                           "stage": p.stage, "terminal": p.status in TERMINAL, "eta": _eta(p)}
             if events:
                 last = events[-1]["id"]
             yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
@@ -327,12 +348,28 @@ async def stream(pid: str, request: Request, after: int = 0):
 
 
 @app.post("/api/projects/{pid}/retry")
-def retry(pid: str, request: Request) -> dict:
+def retry(pid: str, request: Request, body: dict | None = Body(default=None)) -> dict:
     p = _get_accessible(pid, request)
     if p.status not in TERMINAL:
         raise HTTPException(409, "任务还在进行中")
     if not p.input_path or not Path(p.input_path).exists():
         raise HTTPException(400, "原始图纸已丢失，请重新上传")
+    if body:
+        options = _json(p.options_json, {})
+        changed = False
+        for key in ("totalWidth", "totalHeight"):
+            try:
+                value = float(body.get(key))
+            except (TypeError, ValueError):
+                continue
+            if value > 1000:
+                options[key] = value
+                changed = True
+        if changed:
+            with SessionLocal() as s:
+                row = s.get(Project, pid)
+                row.options_json = json.dumps(options, ensure_ascii=False)
+                s.commit()
     runner.set_state(pid, event="重新生成", status="queued", stage="queued", progress=0,
                      error_code="", message="", issues_json="[]")
     jobs.submit(pid)

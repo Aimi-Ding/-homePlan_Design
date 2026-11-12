@@ -138,9 +138,29 @@ def validate(spec: Any, draft_walls: list[dict]) -> tuple[dict, list[str]]:
     if isinstance(spec.get("elec"), list):
         out["elec"] = [e for e in spec["elec"] if isinstance(e, dict) and _pt(e.get("at"))]
 
-    for k in ("beams", "comments", "bearingFrom", "heightFrom", "dims", "expectDims"):
+    for k in ("beams", "bearingFrom", "heightFrom", "dims", "expectDims"):
         if k in spec:
             out[k] = spec[k]
+
+    if "comments" in spec:
+        # 设计器的批注是 {at:[x,y], text}，模型偶尔只给字符串，这里统一成对象，
+        # 否则模板画批注时会读 undefined.length 直接抛错。
+        fallback = [0, 0]
+        for w in out.get("walls") or []:
+            if _pt(w.get("a")):
+                fallback = w["a"]
+                break
+        comments = []
+        for c in spec.get("comments") or []:
+            if isinstance(c, str) and c.strip():
+                comments.append({"at": list(fallback), "text": c.strip()[:200]})
+            elif isinstance(c, dict) and _pt(c.get("at")) and str(c.get("text") or "").strip():
+                item = {"at": _pt(c["at"]), "text": str(c["text"]).strip()[:200]}
+                if c.get("id"):
+                    item["id"] = str(c["id"])[:32]
+                comments.append(item)
+        if comments:
+            out["comments"] = comments
 
     # 底图必须来自几何脚本算好的坐标，模型无权修改
     return out, problems

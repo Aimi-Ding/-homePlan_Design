@@ -299,9 +299,8 @@ function showDetail(id) {
   lastEventId = 0;
   $("viewUpload").hidden = true;
   $("viewDetail").hidden = false;
-  $("previewCard").hidden = true;
-  $("previewFrame").removeAttribute("src");
-  $("togglePreview").textContent = "加载预览";
+  $("resultCard").hidden = true;
+  $("resultList").innerHTML = "";
   $("issuesCard").hidden = true;
   $("eventList").innerHTML = "";
   $("detailName").textContent = "加载中…";
@@ -344,10 +343,63 @@ function renderDetail(p) {
   $("stageText").textContent = STAGE_LABEL[p.stage] || p.stage || "";
   $("progressText").textContent = `${p.progress || 0}%`;
   $("progressBar").style.width = `${p.progress || 0}%`;
+  $("progressBar").parentElement.classList.toggle("err", p.status === "failed");
   $("statusMessage").textContent = p.message || "";
+
+  updateEta(p.eta, p.status);
+
+  const needScale = p.status === "failed" && p.errorCode === "NEEDS_SCALE";
+  $("scaleFix").hidden = !needScale;
+  if (needScale) {
+    $("scaleHint").textContent = "";
+    $("scaleHint").className = "hint";
+    $("scaleSubmit").onclick = () => submitScale(p.id);
+  }
 
   renderIssues(p.issues || []);
   renderActions(p);
+}
+
+function updateEta(eta, status = "") {
+  const el = $("etaText");
+  if (!el) return;
+  if (["succeeded", "partial", "failed", "rejected"].includes(status) || !eta || !eta.remaining) {
+    el.textContent = "";
+    return;
+  }
+  const remain = eta.remaining;
+  el.textContent = remain < 60 ? `预计还需约 ${remain} 秒` : `预计还需约 ${Math.round(remain / 60)} 分钟`;
+}
+
+async function submitScale(id) {
+  const width = $("scaleWidth").value.trim();
+  const height = $("scaleHeight").value.trim();
+  const hint = $("scaleHint");
+  if (!width && !height) {
+    hint.textContent = "填一个总宽或总深，单位毫米";
+    hint.className = "hint err";
+    return;
+  }
+  const body = {};
+  if (width) body.totalWidth = Number(width);
+  if (height) body.totalHeight = Number(height);
+  const btn = $("scaleSubmit");
+  btn.disabled = true;
+  hint.textContent = "";
+  try {
+    await api(`/api/projects/${id}/retry`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    toast("已按新尺寸重新生成，预计 1–2 分钟");
+    showDetail(id);
+  } catch (e) {
+    hint.textContent = e.message;
+    hint.className = "hint err";
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 function renderIssues(issues) {
@@ -372,14 +424,14 @@ function renderActions(p) {
     if (p.urls.html) parts.push(`<button class="btn ghost small" data-dl="${p.urls.html}">下载 HTML</button>`);
     if (p.urls.zip) parts.push(`<button class="btn ghost small" data-dl="${p.urls.zip}">下载 zip</button>`);
     if (p.urls.overlay) parts.push(`<a class="btn ghost small" href="${p.urls.overlay}" target="_blank" rel="noopener">查看叠图</a>`);
-    $("previewCard").hidden = false;
-    $("openDesigner").href = p.urls.designer;
   }
   if (!running) {
     parts.push(`<button class="btn ghost small" id="retryBtn">重新生成</button>`);
   }
   parts.push(`<button class="btn danger small" id="deleteBtn">删除</button>`);
   box.innerHTML = parts.join("");
+
+  renderResults(p, done);
 
   const retry = $("retryBtn");
   if (retry) {
@@ -406,6 +458,55 @@ function renderActions(p) {
     }
   };
   box.querySelectorAll("[data-dl]").forEach((btn) => {
+    btn.onclick = () => startDownload(btn.dataset.dl);
+  });
+}
+
+/* ---------- 已生成成果列表：统一引导到新窗口打开 ---------- */
+function renderResults(p, done) {
+  const card = $("resultCard");
+  const list = $("resultList");
+  if (!done) {
+    card.hidden = true;
+    list.innerHTML = "";
+    return;
+  }
+  const items = [{
+    title: "打开设计器",
+    desc: "2D 布置、3D 漫游、水电点位与报价算量，都在设计器里完成",
+    action: `<a class="btn primary small" href="${p.urls.designer}" target="_blank" rel="noopener">新窗口打开</a>`,
+  }];
+  if (p.urls.html) {
+    items.push({
+      title: "单文件 HTML",
+      desc: "一个文件，双击就能离线打开同一个设计器，方便发给客户",
+      action: `<button class="btn ghost small" data-dl="${p.urls.html}">下载</button>`,
+    });
+  }
+  if (p.urls.zip) {
+    items.push({
+      title: "完整交付包 zip",
+      desc: "含设计器、叠图、报价与交付说明，适合存档或交付",
+      action: `<button class="btn ghost small" data-dl="${p.urls.zip}">下载</button>`,
+    });
+  }
+  if (p.urls.overlay) {
+    items.push({
+      title: "识别叠图",
+      desc: "原图与识别出的墙体、门窗叠在一起，用来核对还原是否准确",
+      action: `<a class="btn ghost small" href="${p.urls.overlay}" target="_blank" rel="noopener">查看</a>`,
+    });
+  }
+  list.innerHTML = items.map((i) => `
+    <li class="result-item">
+      <div class="ri-text">
+        <div class="ri-title">${esc(i.title)}</div>
+        <div class="ri-desc">${esc(i.desc)}</div>
+      </div>
+      ${i.action}
+    </li>`).join("");
+  card.hidden = false;
+  list.querySelectorAll("[data-dl]").forEach((btn) => {
     btn.onclick = () => startDownload(btn.dataset.dl);
   });
 }
@@ -473,6 +574,7 @@ function applyProgress(data) {
   if (data.progress != null) {
     $("progressBar").style.width = `${data.progress}%`;
     $("progressText").textContent = `${data.progress}%`;
+    updateEta(data.eta, data.status);
   }
   if (data.stage) $("stageText").textContent = STAGE_LABEL[data.stage] || data.stage;
   const pill = $("statusPill");
@@ -559,17 +661,6 @@ function bindUpload() {
     }
   });
 
-  $("togglePreview").onclick = () => {
-    const frame = $("previewFrame");
-    if (frame.getAttribute("src")) {
-      frame.removeAttribute("src");
-      $("togglePreview").textContent = "加载预览";
-    } else if (currentId) {
-      frame.src = `/p/${currentId}`;
-      $("togglePreview").textContent = "收起预览";
-    }
-  };
-
   // 首页可以直接选图、填参数；是否登录不影响生成
   $("uploadForm").onsubmit = (e) => {
     e.preventDefault();
@@ -612,6 +703,7 @@ function bindUpload() {
         const data = JSON.parse(xhr.responseText);
         $("uploadForm").reset();
         $("filePicked").hidden = true;
+        toast("已开始生成，通常 1–2 分钟，可留在本页看进度");
         location.hash = `#/p/${data.id}`;
       } else {
         let msg = "上传失败";

@@ -31,7 +31,7 @@ CORE_SYSTEM = """你是户型图还原专家。用户给你一张户型图（可
   "furniture": [{"key": "bed18", "at": [x, y], "rot": 0}],
   "elec": [],
   "autoElec": true,
-  "comments": ["图上没有标注层高，按 2800 估算"]
+  "comments": [{"at": [5200, 3100], "text": "图上没有标注层高，按 2800 估算"}]
 }
 
 # 墙与门窗

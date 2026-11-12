@@ -57,6 +57,9 @@ COOKIE_SECURE = os.getenv("COOKIE_SECURE", "0") == "1"
 # 下载/保存前是否要求留手机号（软门槛，只做前端拦截 + 记录，不挡直链）
 LEAD_REQUIRED = os.getenv("LEAD_REQUIRED", "1") == "1"
 
+# 工具中台看板拉取指标用的 token；留空则不校验（只建议本地/内网）
+METRICS_TOKEN = os.getenv("METRICS_TOKEN", "")
+
 # 阿里云短信（SMS_PROVIDER=aliyun 时必填）
 ALIYUN_ACCESS_KEY_ID = os.getenv("ALIYUN_ACCESS_KEY_ID", "")
 ALIYUN_ACCESS_KEY_SECRET = os.getenv("ALIYUN_ACCESS_KEY_SECRET", "")

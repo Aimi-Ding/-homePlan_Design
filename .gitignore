@@ -18,3 +18,6 @@ vendor/house-plan-designer/scripts/node_modules/
 
 # 系统
 .DS_Store
+
+# 独立仓库：工具中台看板（Aimi-Ding/DataMiddle_Platform）
+tools-console/
